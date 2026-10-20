@@ -8,6 +8,8 @@
 
 #import "DTXSyncManagerSpecHelpers.h"
 
+#import "DTXSyncResource.h"
+
 #import <DetoxSync/DTXSyncManager.h>
 
 #import "NSString+SyncStatus.h"
@@ -108,6 +110,49 @@ it(@"should report js-timers busy resource", ^{
     },
     nil
   ]);
+});
+
+it(@"should report new-arch js-timers busy resource", ^{
+  DTXConnectWithNewArchJSTimerSyncResource();
+  DTXCreateFakeNewArchJSTimer(@1201, 0.4, NO);
+
+  DTXSyncStatus *status = DTXAwaitJSTimerBusy(@1201, 20);
+  expect(status[NSString.dtx_appStatusKey]).to.equal(@"busy");
+  expect(DTXJSTimerIDsInStatus(status)).to.contain(@1201);
+});
+
+// Regression for wix/Detox#4966: -[DTXJSTimerSyncResource jsonDescription] used to dispatch_sync
+// onto the resource's private queue. The manager computes the status on its own serial queue,
+// and work on the resource's queue reports updates with a dispatch_sync onto the manager's
+// queue, so the two queues could wait on each other forever. Parking the resource's queue while
+// a status is requested reproduces the manager side of that wait deterministically: against the
+// old implementation the status request below times out (and, since a failed expectation throws
+// here, the parked block releases itself after a bounded wait so later specs are not stuck).
+it(@"should report new-arch js-timers without waiting for the timer queue", ^{
+  DTXSyncResource *resource = DTXConnectWithNewArchJSTimerSyncResource();
+  DTXCreateFakeNewArchJSTimer(@1202, 0.4, NO);
+  DTXSyncStatus *busyStatus = DTXAwaitJSTimerBusy(@1202, 20);
+  expect(DTXJSTimerIDsInStatus(busyStatus)).to.contain(@1202);
+
+  dispatch_queue_t timerQueue = [resource valueForKey:@"queue"];
+  expect(timerQueue).notTo.beNil();
+  dispatch_semaphore_t release = dispatch_semaphore_create(0);
+  dispatch_async(timerQueue, ^{
+    dispatch_semaphore_wait(release, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)));
+  });
+
+  __block DTXSyncStatus *status = nil;
+  waitUntil(^(DoneCallback done) {
+    [DTXSyncManager statusWithCompletionHandler:^(DTXSyncStatus *fetchedStatus) {
+      status = fetchedStatus;
+      done();
+    }];
+  });
+  dispatch_semaphore_signal(release);
+
+  expect(status).notTo.beNil();
+  expect(status[NSString.dtx_appStatusKey]).to.equal(@"busy");
+  expect(DTXJSTimerIDsInStatus(status)).to.contain(@1202);
 });
 
 it(@"should report run-loop busy resource", ^{

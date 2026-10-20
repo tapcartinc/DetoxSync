@@ -11,6 +11,7 @@
 #import <DetoxSync/DTXSyncManager.h>
 
 #import "DTXJSTimerSyncResourceOldArch.h"
+#import "DTXJSTimerSyncResource.h"
 #import "NSString+SyncResource.h"
 #import "NSString+SyncStatus.h"
 #import "RCTFakes.h"
@@ -85,6 +86,37 @@ void DTXCreateFakeJSTimer(double callbackID, NSTimeInterval duration, double sch
                           BOOL repeats) {
   RCTTiming *fakeTiming = [[RCTTiming alloc] init];
   [fakeTiming createTimer:callbackID duration:duration jsSchedulingTime:schedulingTime repeats:repeats];
+}
+
+DTXSyncResource *DTXConnectWithNewArchJSTimerSyncResource(void) {
+  // +sharedInstance registers the resource with DTXSyncManager on first use.
+  return [DTXJSTimerSyncResource sharedInstance];
+}
+
+void DTXCreateFakeNewArchJSTimer(NSNumber *callbackID, NSTimeInterval duration, BOOL repeats) {
+  RCTTiming *fakeTiming = [[RCTTiming alloc] init];
+  [fakeTiming createTimerForNextFrame:callbackID duration:duration jsSchedulingTime:[NSDate date]
+                              repeats:repeats];
+}
+
+NSArray<NSNumber *> *DTXJSTimerIDsInStatus(DTXSyncStatus *status) {
+  NSMutableArray<NSNumber *> *timerIDs = [NSMutableArray new];
+  for (DTXBusyResource *resource in [status busyResourcesWithName:@"js_timers"]) {
+    NSArray *timers = resource[NSString.dtx_resourceDescriptionKey][@"timers"];
+    [timerIDs addObjectsFromArray:[timers valueForKey:@"timer_id"]];
+  }
+  return timerIDs;
+}
+
+DTXSyncStatus *DTXAwaitJSTimerBusy(NSNumber *timerID, NSUInteger attempts) {
+  DTXSyncStatus *status = nil;
+  for (NSUInteger i = 0; i < attempts; i++) {
+    status = DTXAwaitStatus();
+    if ([DTXJSTimerIDsInStatus(status) containsObject:timerID]) {
+      break;
+    }
+  }
+  return status;
 }
 
 void DTXRegisterSingleEvent(NSString *event, NSString * _Nullable object) {

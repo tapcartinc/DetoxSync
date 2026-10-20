@@ -6,6 +6,8 @@
 //  Copyright © 2021 wix. All rights reserved.
 //
 
+@class DTXSyncResource;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// Category provides mapped timer dictionary for a timer resource representation.
@@ -39,6 +41,21 @@ void DTXConnectWithJSTimerSyncResource(void);
 /// Create fake JS timer with given params.
 void DTXCreateFakeJSTimer(double callbackID, NSTimeInterval duration, double schedulingTime,
                           BOOL repeats);
+
+/// Connects \c DTXSyncManager with the new-architecture JS-timers sync resource (the shared
+/// \c DTXJSTimerSyncResource) and returns it.
+DTXSyncResource *DTXConnectWithNewArchJSTimerSyncResource(void);
+
+/// Create a fake new-architecture JS timer (via \c createTimerForNextFrame:) with given params.
+void DTXCreateFakeNewArchJSTimer(NSNumber *callbackID, NSTimeInterval duration, BOOL repeats);
+
+/// All \c timer_id values reported by every busy resource named \c js_timers in \c status
+/// (both the old-arch and the new-arch JS timer resources report under that name).
+NSArray<NSNumber *> *DTXJSTimerIDsInStatus(DTXSyncStatus *status);
+
+/// Fetches the sync status repeatedly (spinning the main run loop in between) until the JS timer
+/// \c timerID is reported busy or \c attempts statuses were fetched. Returns the last status.
+DTXSyncStatus *DTXAwaitJSTimerBusy(NSNumber *timerID, NSUInteger attempts);
 
 /// Register a new single (one-time) event.
 void DTXRegisterSingleEvent(NSString *event, NSString * _Nullable object);

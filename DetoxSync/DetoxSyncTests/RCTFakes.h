@@ -20,6 +20,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)createTimer:(double)callbackID duration:(NSTimeInterval)jsDuration
    jsSchedulingTime:(double)jsSchedulingTime repeats:(BOOL)repeats;
 
+/// New-architecture timer entry point, observed by \c DTXJSTimerSyncResource.
+///
+/// @see https://github.com/facebook/react-native/blob/main/packages/react-native/React/CoreModules/RCTTiming.mm
+- (void)createTimerForNextFrame:(NSNumber *)callbackID duration:(NSTimeInterval)jsDuration
+               jsSchedulingTime:(NSDate *)jsSchedulingTime repeats:(BOOL)repeats;
+
+/// New-architecture timer deletion, observed by \c DTXJSTimerSyncResource.
+- (void)deleteTimer:(double)timerID;
+
 @end
 
 NS_ASSUME_NONNULL_END
