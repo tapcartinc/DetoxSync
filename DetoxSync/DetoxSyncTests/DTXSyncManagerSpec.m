@@ -126,21 +126,32 @@ it(@"should report new-arch js-timers busy resource", ^{
 // and work on the resource's queue reports updates with a dispatch_sync onto the manager's
 // queue, so the two queues could wait on each other forever. Parking the resource's queue while
 // a status is requested reproduces the manager side of that wait deterministically: against the
-// old implementation the status request below times out (and, since a failed expectation throws
-// here, the parked block releases itself after a bounded wait so later specs are not stuck).
+// old implementation the status request below times out.
+//
+// Ordering matters for robustness on a slow box: the park lands on the timer queue right after
+// the observe block has run (drained with a dispatch_sync), so the 1.5 s cleanup timer, which
+// also runs on that queue, cannot remove the timer before the status is taken. A failed
+// expectation throws here, so the parked block releases itself after a bounded wait and later
+// specs are not stuck.
 it(@"should report new-arch js-timers without waiting for the timer queue", ^{
   DTXSyncResource *resource = DTXConnectWithNewArchJSTimerSyncResource();
+  dispatch_queue_t timerQueue = [resource valueForKey:@"queue"];
+  expect(timerQueue).notTo.beNil();
+
   DTXCreateFakeNewArchJSTimer(@1202, 0.4, NO);
+  dispatch_sync(timerQueue, ^{});  // the observe block has run and queued its update for the main queue
+
+  dispatch_semaphore_t release = dispatch_semaphore_create(0);
+  dispatch_async(timerQueue, ^{
+    dispatch_semaphore_wait(release, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)));
+  });
+
+  // Spins the main run loop until the queued update has reached the manager.
   DTXSyncStatus *busyStatus = DTXAwaitJSTimerBusy(@1202, 20);
   expect(DTXJSTimerIDsInStatus(busyStatus)).to.contain(@1202);
 
-  dispatch_queue_t timerQueue = [resource valueForKey:@"queue"];
-  expect(timerQueue).notTo.beNil();
-  dispatch_semaphore_t release = dispatch_semaphore_create(0);
-  dispatch_async(timerQueue, ^{
-    dispatch_semaphore_wait(release, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)));
-  });
-
+  NSTimeInterval defaultTimeout = [Expecta asynchronousTestTimeout];
+  [Expecta setAsynchronousTestTimeout:5];
   __block DTXSyncStatus *status = nil;
   waitUntil(^(DoneCallback done) {
     [DTXSyncManager statusWithCompletionHandler:^(DTXSyncStatus *fetchedStatus) {
@@ -148,6 +159,7 @@ it(@"should report new-arch js-timers without waiting for the timer queue", ^{
       done();
     }];
   });
+  [Expecta setAsynchronousTestTimeout:defaultTimeout];
   dispatch_semaphore_signal(release);
 
   expect(status).notTo.beNil();
